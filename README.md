@@ -1,3 +1,6 @@
+
+   ------ Brouillon ------
+
 # Mesure de l'impédance acoustique
 
 Ce programme permet de calculer un buit blanc d'amplitude contrôlée. Ce bruit blanc servira à mesure l'impédance acoustique d'un tube (par exemple un saxophone).
