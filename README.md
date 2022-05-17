@@ -9,5 +9,5 @@ Code Python pour définir la classe "CadreExperimetal". Utilise la librarie Pyto
 ## go.ipynb
 Notebook Jupyter. Devrait pouvoir fonctionner dans Google Collab. Pour cela, il faut avoir un compte Google Collab et cliquer sur la banière.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/caush/Clickbait/blob/main/OriginalToCurated.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/caush/MinAmp/blob/master/minamp2.py)
 
