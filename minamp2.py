@@ -60,6 +60,11 @@ class CadreExperimetal:
         self.loss_fn = nn.L1Loss()
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-3)
         self.optimizer = torch.optim.AdamW(self.model.parameters())
+        
+        # On forme un identificateur avec les métaparamètres
+        self.identificateur = f"{self.nombrePhases} phases (première {self.premierePhase}),"
+        self.identificateur += f" lots de {self.tailleBatch}, échantillon de {self.tailleEchantillon},"
+        self.identificateur += f" {self.nombreEntrees} entrées, {self.epochs} rondes"
 
     # Un dataset de réels (très simple)
     class RealDataset(Dataset):
@@ -147,7 +152,7 @@ class CadreExperimetal:
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
     # Boucle pour les tests
-    def test(self, dataloader, model, matplot=plt.isinteractive, epoch=None):
+    def test(self, dataloader, model):
         model.eval()
         test_min=1
         test_max=-1
@@ -162,41 +167,53 @@ class CadreExperimetal:
                 pred_max = torch.max(pred)
                 test_min = min(test_min, pred_min)
                 test_max = max(test_max, pred_max)
-                # On garde les valeurs pour le dessin
-                if matplot:
-                    self.test_x.append(X.cpu().numpy())
-                    self.test_y.append(pred.cpu().numpy())
-        self.metaParametres = f"Phases: {self.nombrePhases}, Première Phase: {self.premierePhase}, Ronde: {epoch}, Amplitude(test): {test_max - test_min:>8f}"
-        print(self.metaParametres)
+                # On garde les valeurs pour le dessin éventuel
+                self.test_x.append(X.cpu().numpy())
+                self.test_y.append(pred.cpu().numpy())
+        self.amplitudeTest = f" ({test_max - test_min:>8f})"
+        
+        return model.phase.cpu().detach().numpy()
 
-        if matplot:
-            # Idiocyncratie Python : mettre self devant sinon il y a confusion de symbole
+    # Pour entrainer un modèle défini
+    def entraine(self, matplot:typing.Literal["tout", "rien", "dernier", "premier"]="dernier"):
+        # On imprime le résultat sans entrainement pour les valeurs initiales
+        self.test(self.test_dataloader, self.model) # matplot=plt.isinteractive()
+        print(self.identificateur + self.amplitudeTest)
+        if (matplot=="tout" or matplot=="premier"):
             self.matplot()
 
-        return model.phase.cpu().detach().numpy(), self.metaParametres
-
-    # Appel standard d'un Notenook
-    def gogo(self, matplot:typing.Literal["tout", "rien", "dernier", "premier"]="dernier"):
-        # On imprime le résultat sans entrainement pour les valeurs initiales
-        params = self.test(self.test_dataloader, self.model, matplot=(matplot=="tout" or matplot=="premier"), epoch=0) # matplot=plt.isinteractive()
         for t in range(self.epochs):
             print(f"\nRonde {t+1}") # \n-------------------------------
             self.train(self.train_dataloader, self.model, self.loss_fn, self.optimizer)
-            params, metaParametres = self.test(self.test_dataloader, self.model,
-                matplot=(matplot=="tout" or (matplot=="dernier" and (t+1==self.epochs))),
-                epoch=t+1) # matplot=(t+1==self.epochs) | plt.isinteractive()
-        return params.reshape(self.nombrePhases), metaParametres
+
+            params = self.test(self.test_dataloader, self.model)
+            print(self.amplitudeTest)
+            if (matplot=="tout" or (matplot=="dernier" and (t+1==self.epochs))):
+                self.matplot()
+            
+        return params.reshape(self.nombrePhases)
 
     # Pour faire un graphique de la dernière solution testée
     def matplot(self):
         plt.figure(figsize=(20, 10))
-        plt.title(self.metaParametres)
+        plt.title(self.identificateur + self.amplitudeTest)
         plt.xlabel("Temps")
         plt.ylabel("Amplitude")
         plt.plot(self.test_x, self.test_y, color = "black")
         plt.show()
 
+    def sauver(self):
+        torch.save(self.model.state_dict(), self.identificateur + self.amplitudeTest + ".pth")
+
+    def lire(self):
+        import glob
+        name=glob.glob(self.identificateur + "*.pth")[0]
+        self.model.load_state_dict(torch.load(name))
+        self.test(self.test_dataloader, self.model)
+        return self.amplitudeTest
+
+
 if __name__ == '__main__':
     cadreExperimental = CadreExperimetal()
-    params=cadreExperimental.gogo()
-    print(params)
+    params=cadreExperimental.entraine()
+    print("\nPhases\n", params)
