@@ -175,7 +175,7 @@ class CadreExperimetal:
         return model.phase.cpu().detach().numpy()
 
     # Pour entrainer un modèle défini
-    def entraine(self, matplot:typing.Literal["tout", "rien", "dernier", "premier"]="dernier"):
+    def entraine(self, matplot:str="dernier"):  # , matplot:typing.Literal["tout", "rien", "dernier", "premier"]="dernier"
         # On imprime le résultat sans entrainement pour les valeurs initiales
         self.test(self.test_dataloader, self.model) # matplot=plt.isinteractive()
         print(self.identificateur + self.amplitudeTest)
