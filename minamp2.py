@@ -7,14 +7,14 @@ import typing
 
 import math
 
-class CadreExperimetal:
+class CadreExperimental:
     """
     Minimisation de l'amplitude d'une somme de signaux constitués d'une fondamentale et de ses harmoniques.
     Les harmoniques pourront être décalées selon des phases. Il s'agit de calculer lesdites phases afin de diminuer la différence entre le maximum et le minimum du signal.
     """
 
-    def __init__(self, periode:float=1.0, nombrePhases:int=32, premierePhase=1, exemplesParPhase=16, exemplesParParametre=512, tailleBatch=64,
-     device:str=None, epochs=5):  # device:typing.Literal["cpu", "cuda:0"]=None,
+    def __init__(self, periode:float=1.0, nombrePhases:int=32, premierePhase=1, tailleSousEchantillon=512, tailleEchantillon=262144, tailleBatch=64,
+     device:str=None, epochs=5):  # device:typing.Literal["cpu", "cuda:0"]=None, exemplesParPhase=16, exemplesParParametre=512,
         """ 
         Paramètres
         ----------
@@ -29,9 +29,9 @@ class CadreExperimetal:
 
         Variables d'instance
         --------------------
-        tailleEchantillon (int) : = nombrePhases * exemplesParPhase
-        nombreEntrees (int) : =  tailleEchantillon * exemplesParParametre
-        epsilon (float) : = periode / nombreEntrees
+        tailleSousEchantillon (int) : = nombrePhases * exemplesParPhase                 # taille d'un sous échantillon (doit être un multiple du nombre de phases)
+        tailleEchantillon (int) : =  tailleSousEchantillon * exemplesParParametre       # taille de l'échantillonage (doit être un multiple du nombre de sous échantillons)
+        epsilon (float) : = periode / tailleEchantillon
 
         """
         self.periode = periode
@@ -40,31 +40,38 @@ class CadreExperimetal:
         self.tailleBatch = tailleBatch
         self.epochs = epochs
 
-        self.tailleEchantillon = self.nombrePhases * exemplesParPhase
-        self.nombreEntrees = self.tailleEchantillon * exemplesParParametre
-        self.epsilon = self.periode / self.nombreEntrees
-       
-        self.training_data = CadreExperimetal.RealDataset(self)
-        self.test_data = CadreExperimetal.RealDataset(self)
+        self.tailleSousEchantillon = tailleSousEchantillon      # self.nombrePhases * exemplesParPhase
+        self.tailleEchantillon = tailleEchantillon              # self.tailleSousEchantillon * exemplesParParametre
+        self.epsilon = self.periode / self.tailleEchantillon
+        print(f"Le système est entrainé sur {tailleEchantillon / tailleSousEchantillon} sous échantillons de taille {tailleSousEchantillon}.")
+        print(f"Le ratio entre la taille de ces sous échantillons et le nombre de phases est de {tailleSousEchantillon / nombrePhases}.")
+               
+        self.training_data = CadreExperimental.RealDataset(self)
+        self.test_data = CadreExperimental.RealDataset(self)
 
         # Create data loaders. Attention je me sers du batch_size pour créer l'échantillon. !!!
-        self.train_dataloader = DataLoader(self.training_data, batch_size=self.tailleEchantillon, shuffle = True)
-        self.test_dataloader = DataLoader(self.test_data, batch_size=self.tailleEchantillon)
+        self.train_dataloader = DataLoader(self.training_data, batch_size=self.tailleSousEchantillon, shuffle = True)
+        self.test_dataloader = DataLoader(self.test_data, batch_size=self.tailleSousEchantillon)
 
         # Le device (cpu ou gpu) est calculé automatiquement sauf si on impose une valeur
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") if device==None else torch.device(device)
         print(f"Hardware utilisé : {self.device}")
 
         # Pour l'instant on ne peut pas changer cela d'une instance à l'autre
-        self.model = CadreExperimetal.NeuralNetwork(self).to(self.device)
+        self.model = CadreExperimental.NeuralNetwork(self).to(self.device)
         self.loss_fn = nn.L1Loss()
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-3)
         self.optimizer = torch.optim.AdamW(self.model.parameters())
         
         # On forme un identificateur avec les métaparamètres
         self.identificateur = f"{self.nombrePhases} phases (première {self.premierePhase}),"
-        self.identificateur += f" lots de {self.tailleBatch}, échantillon de {self.tailleEchantillon},"
-        self.identificateur += f" {self.nombreEntrees} entrées, {self.epochs} rondes"
+        self.identificateur += f" échantillon de {self.tailleEchantillon} (periode {self.periode}),"
+        self.identificateur += f" sous échantillons de {self.tailleSousEchantillon},"
+        self.identificateur += f" lots de {self.tailleBatch}, {self.epochs} rondes"
+
+        # Pour l'instant le système n'a pas été testé, donc il n'y a pas d'amplitude
+        #  Comme la variable d'instance n'est pas initialisée, on pourrait s'en servir comme test
+        self.teste = False
 
     # Un dataset de réels (très simple)
     class RealDataset(Dataset):
@@ -84,7 +91,7 @@ class CadreExperimetal:
     # Le modèle (très simple aussi)
     class NeuralNetwork(nn.Module):
         def __init__(self, outer):
-            super(CadreExperimetal.NeuralNetwork, self).__init__()
+            super(CadreExperimental.NeuralNetwork, self).__init__()
             
             # self.Amplitudes énumère les amplitudes nulles (celles du débuat, à commencer par la fondamentale)
             Amplitudes=torch.ones(outer.nombrePhases).float()
@@ -102,20 +109,20 @@ class CadreExperimetal:
             self.phase = nn.Parameter(torch.rand(outer.nombrePhases).reshape(outer.nombrePhases, 1) * 2 * math.pi) # Semble mieux marcher que des zéros partout
 
             # Il faut récupérer les variables de la classe externe (idiosyncrasie Python)
-            self.tailleEchantillon  = outer.tailleEchantillon
+            self.tailleSousEchantillon  = outer.tailleSousEchantillon
             self.nombrePhases = outer.nombrePhases
 
         def forward(self, t:torch.tensor):
-            # t représente un échantillon de taille tailleEchantillon des entrées
+            # t représente un échantillon de taille tailleSousEchantillon des entrées
             # C'est un vecteur (dimension 1) qu'il faut transformer en vecteur ligne (dimension 2)
-            t=t.reshape(1, self.tailleEchantillon)
+            t=t.reshape(1, self.tailleSousEchantillon)
 
-            # On calcule une matrice de taille nombrePhases x tailleEchantillon
+            # On calcule une matrice de taille nombrePhases x tailleSousEchantillon
             kt = self.DeuxPiKSurT @ t
             
             # On additionne la phase et on prend le cosinus pour toutes les valeurs
             # Ensuite on supprime les valeurs pour les amplitudes nulles
-            # Cela donne toujours une matrice de taille nombrePhases x tailleEchantillon
+            # Cela donne toujours une matrice de taille nombrePhases x tailleSousEchantillon
             lesCosinus = self.Amplitudes * torch.cos(kt + self.phase)
 
             # On fait la somme sur les phases, c'est à dire la première dimension (0)
@@ -125,7 +132,7 @@ class CadreExperimetal:
             return value
 
     # Boucle pour l'entrainement. On ne se sert pas des y !
-    def train(self, dataloader, model, loss_fn, optimizer):
+    def train(self, dataloader, model, loss_fn, optimizer, trace):
         size = len(dataloader.dataset)
         model.train()
         for batch, (X, y) in enumerate(dataloader):
@@ -147,7 +154,7 @@ class CadreExperimetal:
             loss.backward()
             optimizer.step()
 
-            if batch % 256 == 0:
+            if (batch % 256 == 0 and trace >=2):
                 loss, current = loss.item(), batch * len(X)
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
@@ -172,29 +179,51 @@ class CadreExperimetal:
                 self.test_y.append(pred.cpu().numpy())
         self.amplitudeTest = f" ({test_max - test_min:>8f})"
         
-        return model.phase.cpu().detach().numpy()
+        return 
 
     # Pour entrainer un modèle défini
-    def entraine(self, matplot:str="dernier"):  # , matplot:typing.Literal["tout", "rien", "dernier", "premier"]="dernier"
+    def entraine(self, trace:int=2, dessine:int=1): 
+        """
+        Entrainement du système.
+
+        Paramètres
+        ----------
+        trace (int) : 0 rien n'est tracé, 1 la derniere étape est tracée, 2 tout est tracé
+        dessine (int) : 0 rien n'est dessiné, 1 la derniere étape est dessiné, 2 tout est dessiné
+        """
         # On imprime le résultat sans entrainement pour les valeurs initiales
-        self.test(self.test_dataloader, self.model) # matplot=plt.isinteractive()
-        print(self.identificateur + self.amplitudeTest)
-        if (matplot=="tout" or matplot=="premier"):
-            self.matplot()
+        if (dessine >= 2):
+            self.testeEtDessine()
+        else:
+            self.test(self.test_dataloader, self.model)
+        if (trace >=2):
+            print(self.identificateur + self.amplitudeTest)
 
         for t in range(self.epochs):
-            print(f"\nRonde {t+1}") # \n-------------------------------
-            self.train(self.train_dataloader, self.model, self.loss_fn, self.optimizer)
-
-            params = self.test(self.test_dataloader, self.model)
-            print(self.amplitudeTest)
-            if (matplot=="tout" or (matplot=="dernier" and (t+1==self.epochs))):
-                self.matplot()
+            if (trace >=2):
+                print(f"\nRonde {t+1}") # \n-------------------------------
             
-        return params.reshape(self.nombrePhases)
+            self.train(self.train_dataloader, self.model, self.loss_fn, self.optimizer, trace)
 
-    # Pour faire un graphique de la dernière solution testée
-    def matplot(self):
+            if ((dessine >= 1) and (t+1==self.epochs)):
+                self.testeEtDessine()
+            else:
+                self.test(self.test_dataloader, self.model)
+            
+            if (trace >=1):
+                print(self.amplitudeTest)
+
+    def parametres(self):
+        """
+        Retourne un tableau (numpy) de paramêtres.
+        """
+        return self.model.phase.cpu().detach().numpy().reshape(self.nombrePhases)
+
+    def testeEtDessine(self):
+        """
+        Exécute un test et ensuite affiche le résultat
+        """
+        self.test(self.test_dataloader, self.model)
         plt.figure(figsize=(20, 10))
         plt.title(self.identificateur + self.amplitudeTest)
         plt.xlabel("Temps")
@@ -203,17 +232,32 @@ class CadreExperimetal:
         plt.show()
 
     def sauver(self):
-        torch.save(self.model.state_dict(), self.identificateur + self.amplitudeTest + ".pth")
+        """
+        Sauve le système dans un fichier avec un nom constitué des métaparamètres
+        """
+        self.test(self.test_dataloader, self.model)
+        torch.save(self.model.state_dict(), self.signature() + ".pth")
 
     def lire(self):
+        """
+        Lit les fichiers dont les noms sont consitutés des métaparamêtres. Se concentre sur le fichier avec la meilleure amplitude (la plus faible).
+        """
         import glob
-        name=glob.glob(self.identificateur + "*.pth")[0]
-        self.model.load_state_dict(torch.load(name))
+        names=glob.glob(self.identificateur + "*.pth")
+        names.sort()
+        self.model.load_state_dict(torch.load(names[0]))
         self.test(self.test_dataloader, self.model)
         return self.amplitudeTest
 
+    def signature(self):
+        """
+        Retourne la signature du cadre expérimental, c'est à dire les métaparamètres et l'amplitude
+        """
+        if not hasattr(self, 'amplitudeTest'):
+            # obj.attr_name exists.
+            self.test(self.test_dataloader, self.model)
+        return self.identificateur + self.amplitudeTest
 
 if __name__ == '__main__':
-    cadreExperimental = CadreExperimetal()
+    cadreExperimental = CadreExperimental()
     params=cadreExperimental.entraine()
-    print("\nPhases\n", params)
