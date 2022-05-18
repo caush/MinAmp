@@ -14,7 +14,7 @@ class CadreExperimetal:
     """
 
     def __init__(self, periode:float=1.0, nombrePhases:int=32, premierePhase=1, exemplesParPhase=16, exemplesParParametre=512, tailleBatch=64,
-     device:typing.Literal["cpu", "cuda:0"]=None, epochs=5):
+     device:str=None, epochs=5):  # device:typing.Literal["cpu", "cuda:0"]=None,
         """ 
         Paramètres
         ----------
@@ -24,7 +24,7 @@ class CadreExperimetal:
         exemplesParPhase (int) : nombre d'échantillons par phase pour espérer être présent dans tous les quadrants
         exemplesParParametre (int) : nombre d'exemples par paramètres (valeur à comparer avec le nombre de paramètres c.-à-d. de phases)
         tailleBatch (int) : nombre de lots de données traitées en parallèle sur le GPU
-        device (str) : hardware ou doit être faite l'optimisation. Si None, le GPU sera utilisé si présent
+        device (str) : hardware ou doit être faite l'optimisation. Valeurs "cpu" ou None. Si None, le GPU sera utilisé si présent
         epochs (int) : nombre d'optimisations
 
         Variables d'instance
