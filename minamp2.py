@@ -215,12 +215,49 @@ class CadreExperimental:
         plt.plot(self.test_x, self.test_y, color = "black")
         plt.show()
 
-    def sauve(self):
+    def sauveOld(self, repertoire="models"):
         """
-        Sauve le système dans un fichier avec un nom constitué des métaparamètres
+        Sauve les paramètres du cadre expérimental dams un répertoire
+        Le nom du fichier est constitué des métaparamètres et de l'amplification
         """
+        import os
+        filename=os.path.join(repertoire, self.signature() + ".pth")
         if self.amplitudeTest == None: self.test(self.test_dataloader, self.model)
-        torch.save(self.model.state_dict(), self.signature() + ".pth")
+        torch.save(self.model.state_dict(), filename)
+        return self.signature()
+
+    def sauve(self, filename="CadreExperimental.csv"):
+        """
+        Sauve les paramètres du cadre expérimental dans un fichier CSV 
+        Chaque ligne du fichier est constitué des métaparamètres et de l'amplification
+        Il va y avoir une ligne titre pour le nom de ces paramètres
+        En plus, il y a une colonne indiquant la date de la sauvegarde
+        """
+        import os
+        import csv
+        entetes = ["Phases", "Premiere", "Nombre SE", "Taille SE", "Periode", "Rondes", "Amplitude", "Datetime"]
+        # On crée un fichier avec les entêtes s'il n'existe pas
+        if not os.path.exists(filename):
+            with open(filename, "w") as f:
+                writer = csv.writer(f, lineterminator="\n")
+                # writer=csv.writer(f, dialect="excel-tab")
+                writer.writerow(entetes)
+        
+        # Renseigner l'amplitude
+        if self.amplitudeTest == None:
+            self.test(self.test_dataloader, self.model)
+        
+        # Forger la ligne
+        from datetime import datetime
+        ligne = [self.nombrePhases, self.premierePhase, self.nombreSousEchantillons, self.tailleSousEchantillon, self.periode, self.rondes, self.amplitudeTest.item(), datetime.today()]
+        ligne = ligne + self.parametres().tolist()
+
+        # Écrire la ligne à la fin du fichier
+        with open(filename, "a") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            # writer=csv.writer(f, dialect="excel-tab")
+            writer.writerow(ligne)
+
         return self.signature()
 
     def lire(self):
@@ -246,4 +283,5 @@ class CadreExperimental:
 
 if __name__ == '__main__':
     cadreExperimental = CadreExperimental()
-    params=cadreExperimental.entraine()
+    # params=cadreExperimental.entraine()
+    cadreExperimental.sauve()
