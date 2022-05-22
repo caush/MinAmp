@@ -33,6 +33,7 @@ class CadreExperimental:
         --------------------
         epsilon (float) : = periode / (tailleSousEchantillon * nombreSousEchantillons)
         amplitudeTest (int) : None dans le cas où il n'y a pas eu encore de tests
+        rondesEffectives (int) : le nombre de rondes réslisées dans l'entrainement (0 si pas d'entrainement)
         """
         self.periode = periode
         self.nombrePhases = nombrePhases
@@ -70,6 +71,7 @@ class CadreExperimental:
 
         # Pour l'instant le système n'a pas été testé, donc il n'y a pas d'amplitude pour les tests
         self.amplitudeTest = None
+        self.rondesEffectives = 0
 
     # Un dataset de réels (très simple)
     class RealDataset(Dataset):
@@ -193,6 +195,7 @@ class CadreExperimental:
         for t in range(self.rondes):
             if (trace >=2): print(f"Ronde {t+1}")
             self.train(self.train_dataloader, self.model, self.loss_fn, self.optimizer, trace)
+            self.rondesEffectives += 1
             self.test(self.test_dataloader, self.model)
             if (trace >=1): print(f"Amplitude(test): {self.amplitudeTest:>5f}")
             if ((dessine >= 1) and (t+1==self.rondes)): self.dessine()
@@ -215,7 +218,7 @@ class CadreExperimental:
         plt.plot(self.test_x, self.test_y, color = "black")
         plt.show()
 
-    def sauveOld(self, repertoire="models"):
+    def sauve(self, repertoire="models"):
         """
         Sauve les paramètres du cadre expérimental dams un répertoire
         Le nom du fichier est constitué des métaparamètres et de l'amplification
@@ -226,16 +229,15 @@ class CadreExperimental:
         torch.save(self.model.state_dict(), filename)
         return self.signature()
 
-    def sauve(self, filename="CadreExperimental.csv"):
+    def sauveNew(self, filename="CadreExperimental.csv"):
         """
-        Sauve les paramètres du cadre expérimental dans un fichier CSV 
-        Chaque ligne du fichier est constitué des métaparamètres et de l'amplification
+        Sauve les paramètres et l'amplification du cadre expérimental dans un fichier CSV 
         Il va y avoir une ligne titre pour le nom de ces paramètres
         En plus, il y a une colonne indiquant la date de la sauvegarde
         """
         import os
         import csv
-        entetes = ["Phases", "Premiere", "Nombre SE", "Taille SE", "Periode", "Rondes", "Amplitude", "Datetime"]
+        entetes = ["Phases", "Premiere", "Nombre SE", "Taille SE", "Periode", "Rondes", "Rondes E", "Amplitude", "Datetime", "Parametres"]
         # On crée un fichier avec les entêtes s'il n'existe pas
         if not os.path.exists(filename):
             with open(filename, "w") as f:
@@ -249,8 +251,8 @@ class CadreExperimental:
         
         # Forger la ligne
         from datetime import datetime
-        ligne = [self.nombrePhases, self.premierePhase, self.nombreSousEchantillons, self.tailleSousEchantillon, self.periode, self.rondes, self.amplitudeTest.item(), datetime.today()]
-        ligne = ligne + self.parametres().tolist()
+        ligne = [self.nombrePhases, self.premierePhase, self.nombreSousEchantillons, self.tailleSousEchantillon, self.periode, self.rondes, self.rondesEffectives, self.amplitudeTest.item(), datetime.today()]
+        ligne.append(self.parametres().tolist())
 
         # Écrire la ligne à la fin du fichier
         with open(filename, "a") as f:
@@ -271,6 +273,34 @@ class CadreExperimental:
         self.test(self.test_dataloader, self.model)
         return self.signature()
 
+    def lireNew(self, filename="CadreExperimental.csv"):
+        """
+        Lit les paramètres et l'amplitude. Se concentre sur le fichier avec la meilleure amplitude (la plus faible).
+        """
+        import pandas as pd
+
+        import glob
+        names=glob.glob(self.identificateur + "*.pth")
+        names.sort()
+
+        import ast
+        fichier = pd.read_csv(filename)
+        fichier[['Parametres']] = fichier[['Parametres']].applymap(ast.literal_eval)
+ 
+        fichier=fichier[(fichier["Phases"]==self.nombrePhases) & 
+                        (fichier["Premiere"]==self.premierePhase) & \
+                        (fichier["Nombre SE"]==self.nombreSousEchantillons) & \
+                        (fichier["Nombre SE"]==self.nombreSousEchantillons) & \
+                        (fichier["Taille SE"]==self.tailleSousEchantillon) ]
+
+        parametres = fichier.nsmallest(1, "Amplitude", keep='first')["Parametres"].values[0]
+
+        self.model.phase[0] = parametres
+
+        #self.model.load_state_dict(torch.load(names[0]))
+        #self.test(self.test_dataloader, self.model)
+        return self.signature()
+
     def signature(self):
         """
         Retourne la signature du cadre expérimental, c'est à dire les métaparamètres et l'amplitude
@@ -285,3 +315,4 @@ if __name__ == '__main__':
     cadreExperimental = CadreExperimental()
     # params=cadreExperimental.entraine()
     cadreExperimental.sauve()
+    cadreExperimental.lire()

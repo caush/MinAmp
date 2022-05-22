@@ -1,22 +1,6 @@
 /.vscode
-/2006_Lefebvre.pdf
 /data
-/minamp.py
-/MinAmp.txt
-/MinAmp.xlsx
-/model.pth
-/MyModule.py
-/output phase 128 ADAMW.png
-/output phase 128 SGD.png
-/output phase 16 ADAMW.png
-/output phase 16 SGD.png
-/output phase 2 ADAMW.png
-/output phase 256 ADAMW.png
-/output phase 4 ADAMW (2).png
-/output phase 4 ADAMW.png
-/Quickstart.py
+/Brouillon
 /Synthesis_of_low-peak-factor_signals_and_binary_sequences_with_low_autocorrelation_Corresp..pdf
-/test.ipynb
-/test.py
 /__pycache__
 *.pth
