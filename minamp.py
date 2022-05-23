@@ -1,9 +1,11 @@
+import os           # Utilisations de fonctionalités du système d'exploitation (Windows, Apple, Linux)
+import glob         # Récupération de fichiers dans un répertorie
+import pandas as pd # Manipulation des tableaux de métaparamètres
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
-import typing
 
 import math
 
@@ -12,6 +14,38 @@ class CadreExperimental:
     Minimisation de l'amplitude d'une somme de signaux constitués d'une fondamentale et de ses harmoniques.
     Les harmoniques pourront être décalées selon des phases. Il s'agit de calculer lesdites phases afin de diminuer la différence entre le maximum et le minimum du signal.
     """
+
+    @classmethod
+    def lireTout(repertoire="CadreExperimental"):
+        """
+        Lecture des métaparamètres pour tous les modèles sauvegardés dans le répertoire.
+        Les métaparamètres sont récupérés à partir des noms des fichiers.
+        """   
+        names=glob.glob(os.path.join(repertoire, "*.pth"))
+
+        # Extraire les metaparamètres des noms
+
+        #names.sort()
+
+        df = pd.DataFrame({"Phases":int}) # 
+
+        import datetime as dt
+        variables ={'Phases':int(),
+                    'Premiere':int(),
+                    'NombreSE':int(),
+                    'TailleSE':int(),
+                    'Periode':int(),
+                    'Rondes':int(),
+                    'RondesE':int(),
+                    'Amplitude':float(),
+                    'Moment':dt.datetime.now()}
+
+        df = pd.DataFrame(variables, index=[])
+
+        for name in names:
+            df.insert(name)
+
+        return df
 
     def __init__(self, periode:float=1.0, nombrePhases:int=32, premierePhase=1, tailleSousEchantillon=512, nombreSousEchantillons=512, rondes=5, tailleBatch=64,
      device:str=None):  # device:typing.Literal["cpu", "cuda:0"]=None, exemplesParPhase=16, exemplesParParametre=512,
@@ -218,7 +252,7 @@ class CadreExperimental:
         plt.plot(self.test_x, self.test_y, color = "black")
         plt.show()
 
-    def sauve(self, repertoire="models"):
+    def sauve(self, repertoire="CadreExperimental"):
         """
         Sauve les paramètres du cadre expérimental dams un répertoire
         Le nom du fichier est constitué des métaparamètres et de l'amplification
@@ -262,12 +296,14 @@ class CadreExperimental:
 
         return self.signature()
 
-    def lire(self):
+    def lire(self, repertoire="CadreExperimental"):
         """
         Lit les fichiers dont les noms sont consitués des métaparamêtres. Se concentre sur le fichier avec la meilleure amplitude (la plus faible).
         """
         import glob
-        names=glob.glob(self.identificateur + "*.pth")
+        import os
+        
+        names=glob.glob(os.path.join(repertoire, self.identificateur + ".pth"))
         names.sort()
         self.model.load_state_dict(torch.load(names[0]))
         self.test(self.test_dataloader, self.model)
