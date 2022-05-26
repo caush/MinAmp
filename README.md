@@ -6,7 +6,7 @@
 Ce programme permet de calculer un buit blanc d'amplitude contrôlée. Ce bruit blanc servira à mesure l'impédance acoustique d'un tube (par exemple un saxophone).
 
 
-## minamp2.py
+## minamp.py
 Code Python pour définir la classe "CadreExperimetal". Utilise la librarie Pytorch et un GPU si disponible.
 
 ## go.ipynb
