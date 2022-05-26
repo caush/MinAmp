@@ -326,7 +326,7 @@ class CadreExperimental:
 
         #self.identificateur += f" {self.rondeMax} rondes"
 
-        names=glob.glob(os.path.join(nomRepertoire, self.identificateur + f", {rondeEffective} rondes + " + "*.pth"))
+        names=glob.glob(os.path.join(nomRepertoire, "* " + self.identificateur + f", {rondeEffective} rondes" + ".pth"))
 
         names.sort()
 
@@ -342,7 +342,7 @@ class CadreExperimental:
         if nomRepertoire == None: # Récupérer le nom de la classe comme nom de répertoire
             nomRepertoire = type(self).__name__
 
-        names=glob.glob(os.path.join(nomRepertoire, self.identificateur + f", {rondeEffective} rondes " + "*.pth"))
+        names=glob.glob(os.path.join(nomRepertoire, "* " + self.identificateur + f", {rondeEffective} rondes" + ".pth"))
 
         if len(names)>=1:
             names.sort()
@@ -357,7 +357,7 @@ class CadreExperimental:
         """
         Retourne la signature du cadre expérimental, c'est à dire les métaparamètres et l'amplitude
         """
-        return self.identificateur + f", {self.rondeEffective} rondes + " + f" ({self.amplitudeTest.item():>5f})"
+        return f"({self.amplitudeTest.item():>5f} )" + self.identificateur + f", {self.rondeEffective} rondes"
 
 if __name__ == '__main__':
     cadreExperimental=CadreExperimental(nombrePhases=512,\
