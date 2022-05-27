@@ -357,7 +357,7 @@ class CadreExperimental:
         """
         Retourne la signature du cadre expérimental, c'est à dire les métaparamètres et l'amplitude
         """
-        return f"({self.amplitudeTest.item():>5f} )" + self.identificateur + f", {self.rondeEffective} rondes"
+        return f"({self.amplitudeTest.item():>5f}) " + self.identificateur + f", {self.rondeEffective} rondes"
 
 if __name__ == '__main__':
     cadreExperimental=CadreExperimental(nombrePhases=512,\
