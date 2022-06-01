@@ -22,6 +22,9 @@ class Entete(Enum):
     Amplitude= auto()
     Moment= auto()
 
+if torch.cuda.is_available():
+    print(f"Un GPU est disponible")
+
 class CadreExperimental:
     """
     Minimisation de l'amplitude d'une somme de signaux constitués d'une fondamentale et de ses harmoniques.
@@ -29,9 +32,9 @@ class CadreExperimental:
     """
 
     def __init__(self, periode:float=1.0, nombrePhases:int=32, premierePhase=1, tailleSousEchantillons=512, nombreSousEchantillons=512, tailleBatch=64,
-     device:str=None):
+     device:str=None, echantillonage:int=None):
         """ 
-        Paramètres
+        Paramètres qui vont devenir des variables d'instance
         ----------
         periode (float) : la période du signal. Va être multipliée par 2 * math.pi
         nombrePhases (int) : nombre de phases à considérer
@@ -40,10 +43,12 @@ class CadreExperimental:
         nombreSousEchantillons (int) : nombre de sous échantillons
         tailleBatch (int) : nombre de lots de données traitées en parallèle sur le GPU
         device (str) : hardware ou doit être faite l'optimisation. Valeurs "cpu" ou None. Si None, le GPU sera utilisé si présent
+        echantillonage (int) : le nombre de valeurs dans l'échantillonage (32000, 44100, 48000, 88200, 96000, 192000)
         
         Variables d'instance
         --------------------
-        epsilon (float) : = periode / (tailleSousEchantillons * nombreSousEchantillons)
+        epsilon (float) : = periode / (tailleSousEchantillons * nombreSousEchantillons) si echantillonage non renseigné (None)
+        epsilon (float) : = periode / echantillonage si n'est pas null
         amplitudeTest (int) : None dans le cas où il n'y a pas eu encore de tests
         rondesEffectives (int) : le nombre de rondes réalisées dans l'entrainement (0 si pas d'entrainement)
         """
@@ -54,16 +59,26 @@ class CadreExperimental:
         self.nombreSousEchantillons = nombreSousEchantillons
         self.tailleBatch = tailleBatch
 
-        self.epsilon = self.periode / (self.tailleSousEchantillons * self.nombreSousEchantillons)
+        if echantillonage==None:
+            self.echantillonage = self.tailleSousEchantillons * self.nombreSousEchantillons
+        else:
+            self.echantillonage = echantillonage
+
+        assert self.echantillonage == self.tailleSousEchantillons * self.nombreSousEchantillons
+        assert self.nombreSousEchantillons % self.tailleBatch == 0
+    
+        self.epsilon = self.periode / self.echantillonage
         #print(f"Le système est entrainé sur {self.nombreSousEchantillons} sous échantillons de taille {self.tailleSousEchantillons}.")
         #print(f"Le ratio entre la taille de ces sous échantillons et le nombre de phases est de {tailleSousEchantillons / nombrePhases}.")
                
+        # BATCH : je me demande si on ne peut pas avoir un seul dataset ici
         self.training_data = CadreExperimental.RealDataset(self)
         self.test_data = CadreExperimental.RealDataset(self)
 
-        # Create data loaders. Attention je me sers du batch_size pour créer l'échantillon. !!!
-        self.train_dataloader = DataLoader(self.training_data, batch_size=self.tailleSousEchantillons, shuffle = True)
-        self.test_dataloader = DataLoader(self.test_data, batch_size=self.tailleSousEchantillons)
+        # Create data loaders.
+        # BATCH : se servir du batch_size
+        self.train_dataloader = DataLoader(self.training_data, batch_size=self.tailleBatch) #, shuffle = True) # tailleSousEchantillons
+        self.test_dataloader = DataLoader(self.test_data, batch_size=self.tailleBatch) # tailleSousEchantillons
 
         # Le device (cpu ou gpu) est calculé automatiquement sauf si on impose une valeur
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") if device==None else torch.device(device)
@@ -73,7 +88,7 @@ class CadreExperimental:
         self.model = CadreExperimental.NeuralNetwork(self).to(self.device)
         self.loss_fn = nn.L1Loss()
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-3)
-        self.optimizer = torch.optim.AdamW(self.model.parameters())
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-2)
         
         # On forme un identificateur avec les métaparamètres
         self.identificateur = f"{self.nombrePhases} phases (première {self.premierePhase}),"
@@ -91,61 +106,100 @@ class CadreExperimental:
         self.meilleurRonde = None
 
     # Un dataset de réels (très simple)
+    class RealDataset_old(Dataset):
+        def __init__(self, outer):
+            self.min = 0.0
+            self.max = outer.periode
+            self.step = outer.epsilon
+            # BATCH : Faire le shuffle ici. 
+
+        def __len__(self):
+            # BATCH : Que faire de __len__ ? 
+            #       : Le diviser par self.tailleSousEchantillons
+            return round((self.max - self.min) / self.step)
+
+        def __getitem__(self, idx):
+            # BATCH : il faut renvoyer deux tableaux de taille self.tailleSousEchantillons de floats
+            number = self.min + self.step * idx
+            label = 0
+            return number, label
+    
+    # BATCH : modifier pour pouvoir utiliser les batchs
     class RealDataset(Dataset):
         def __init__(self, outer):
             self.min = 0.0
             self.max = outer.periode
             self.step = outer.epsilon
+            self.tailleSousEchantillons = outer.tailleSousEchantillons
+            self.zeros = torch.zeros(self.tailleSousEchantillons)
+            # BATCH : Faire le shuffle ici.
+            rand_indx = torch.randperm(outer.echantillonage)
+            self.nombres=torch.arange(self.min, self.max, self.step)[rand_indx]
 
         def __len__(self):
-            return round((self.max - self.min) / self.step)
+            return round((self.max - self.min) / self.step / self.tailleSousEchantillons)
 
         def __getitem__(self, idx):
-            number = self.min + self.step * idx
-            label = 0
-            return number, label
+            # BATCH : il faut renvoyer deux tableaux de taille self.tailleSousEchantillons de floats
+            nombres = self.nombres[idx * self.tailleSousEchantillons : (idx+1) * self.tailleSousEchantillons]
+            return nombres, self.zeros
 
     # Le modèle (très simple aussi)
     class NeuralNetwork(nn.Module):
         def __init__(self, outer):
             super(CadreExperimental.NeuralNetwork, self).__init__()
             
-            # self.Amplitudes énumère les amplitudes nulles (celles du débuat, à commencer par la fondamentale)
+            # self.Amplitudes énumère les amplitudes nulles (celles du début, à commencer par la fondamentale)
+            # C'est un vecteur de foat, colonne
+            # BATCH : dimension == 2, taille == (nombrePhases, 1)
             Amplitudes=torch.ones(outer.nombrePhases).float()
             Amplitudes[0:outer.premierePhase-1]=0
             self.Amplitudes=Amplitudes.reshape(outer.nombrePhases, 1).to(outer.device)
 
             # self.DeuxPiKSurT énumère les k de 1 (inclu) à nombrePhases (inclu) multipliés par les constantes 2, pi et 1/periode.
             # C'est un vecteur de float (pour aller dans la moulinette CUDA), colonne (c.-à-d. une matrice avec nombrePhases lignes et une colonne).
-            DeuxPiKSurT = torch.arange(1, outer.nombrePhases+1).float().reshape(outer.nombrePhases, 1) * 2 * math.pi / outer.periode
+            # BATCH : dimension == 2, taille == (nombrePhases, tailleBatch)
+            KSurT = torch.arange(1, outer.nombrePhases+1).float().unsqueeze(0).repeat(outer.tailleBatch, 1)
+            KSurT.unsqueeze_(2)
+            DeuxPiKSurT = KSurT * 2 * math.pi / outer.periode
             self.DeuxPiKSurT = DeuxPiKSurT.to(outer.device)
 
             # Les paramètres du modèle sont les phases (il y en a nombrePhases). 
-            # On pourrait ramener à nombrePhases - 1 paramètre en considérant que la phase de la fondamentale est toujours 0. Mais on ne le fera pas.
+            # On pourrait ramener à nombrePhases - 1 paramètre en considérant que la phase de la fondamentale est toujours 0.
+            # On pourrait diminuer le nombre de paramètres en tenant compte des amplitudes nilles. On ne fera rien de tout cela.
             # self.phase = nn.Parameter(torch.zeros(outer.nombrePhases).reshape(outer.nombrePhases, 1))
             self.phase = nn.Parameter(torch.rand(outer.nombrePhases).reshape(outer.nombrePhases, 1) * 2 * math.pi) # Semble mieux marcher que des zéros partout
+            # BATCH : dimension == 2, taille == (nombrePhases, 1)
 
             # Il faut récupérer les variables de la classe externe (idiosyncrasie Python)
             self.tailleSousEchantillons  = outer.tailleSousEchantillons
             self.nombrePhases = outer.nombrePhases
+            self.tailleBatch = outer.tailleBatch
 
         def forward(self, t:torch.tensor):
-            # t représente un échantillon de taille tailleSousEchantillons des entrées
-            # C'est un vecteur (dimension 1) qu'il faut transformer en vecteur ligne (dimension 2)
-            t=t.reshape(1, self.tailleSousEchantillons)
-
-            # On calcule une matrice de taille nombrePhases x tailleSousEchantillons
+            # t représente tailleBatch échantillons de taille tailleSousEchantillons
+            # C'est une matrice tailleBatch par tailleSousEchantillons
+            # Il ne faut pas y toucher
+            # t=t.reshape(self.tailleBatch, self.tailleSousEchantillons)
+            t.unsqueeze_(1) # self.tailleBatch, 1, self.tailleSousEchantillons
+            
+            # Pour rappel, DeuxPiKSurT est une matrice de taille nombrePhases par tailleBatch
+            # On va obtenir une matrice de taille nombrePhases par tailleSousEchantillons
             kt = self.DeuxPiKSurT @ t
             
             # On additionne la phase et on prend le cosinus pour toutes les valeurs
             # Ensuite on supprime les valeurs pour les amplitudes nulles
             # Cela donne toujours une matrice de taille nombrePhases x tailleSousEchantillons
-            lesCosinus = self.Amplitudes * torch.cos(kt + self.phase)
+            ktPlusPhase = kt + self.phase
+            lesCosinus = torch.cos(ktPlusPhase)
+            lesCosinusAmplifies = self.Amplitudes * lesCosinus
+             # BATCH : tensor de dimension 3 et de taille : batches x nombrePhases x tailleSousEchantillons
 
             # On fait la somme sur les phases, c'est à dire la première dimension (0)
-            value = torch.sum(lesCosinus, 0) / self.nombrePhases #  math.sqrt(nombrePhases)
+            value = torch.sum(lesCosinusAmplifies, 1) / self.nombrePhases #  math.sqrt(nombrePhases)
             #value_max = torch.max(lesCosinus, 0).values
             #value_min = torch.min(lesCosinus, 0).values
+             # BATCH : faire de quoi ici : taille batch
             return value
 
     # Boucle pour l'entrainement. On ne se sert pas des y !
@@ -156,12 +210,13 @@ class CadreExperimental:
             X = X.to(self.device)
             # Mettre des floats pour aller dans la moulinette CUDA
             X = X.float()
+            # BATCH : X etait de taille tailleSousEchantillons, va passer a taille batch x tailleSousEchantillons
             # Évaluation du modèle : on récupère des points pour toute la courbe
             pred = model(X)
 
             # Calcul du min et du max
-            pred_min = torch.min(pred)
-            pred_max = torch.max(pred)
+            pred_min = torch.min(pred, 1).values
+            pred_max = torch.max(pred, 1).values 
             
             # Minimisation de la valeur absolue entre le min et la max
             loss = loss_fn(pred_min, pred_max)
@@ -185,15 +240,15 @@ class CadreExperimental:
         with torch.no_grad():
             for X, y in dataloader:
                 X = X.float()
-                X, y = X.to(self.device), y.to(self.device)
+                X = X.to(self.device)
                 pred = model(X)
                 pred_min = torch.min(pred)
                 pred_max = torch.max(pred)
                 test_min = min(test_min, pred_min)
                 test_max = max(test_max, pred_max)
                 # On garde les valeurs pour le dessin éventuel
-                self.test_x.append(X.cpu().numpy())
-                self.test_y.append(pred.cpu().numpy())
+                self.test_x = self.test_x + X.cpu().flatten().numpy().tolist()
+                self.test_y = self.test_y + pred.cpu().flatten().numpy().tolist()
         self.amplitudeTest = test_max - test_min
 
     # Pour entrainer un modèle défini
@@ -361,9 +416,16 @@ class CadreExperimental:
 
 if __name__ == '__main__':
     cadreExperimental=CadreExperimental(nombrePhases=512,\
-                    premierePhase=15,\
+                    premierePhase=12,\
                     tailleSousEchantillons=512,\
-                    nombreSousEchantillons=512).recupere(rondeEffective=40)
+                    nombreSousEchantillons=512,
+                    tailleBatch=128).entraine(nombreRondes=1024)
 
-    cadreExperimental = CadreExperimental().entraine(nombreRondes=50)
+    # cadreExperimental=CadreExperimental(nombrePhases=3,\
+    #                 premierePhase=2,\
+    #                 tailleSousEchantillons=8,\
+    #                 nombreSousEchantillons=16,
+    #                 tailleBatch=5,
+    #                 echantillonage=96000).recupere(rondeEffective=5)
+
     # cadreExperimental.sauve()
