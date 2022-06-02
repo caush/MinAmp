@@ -73,7 +73,7 @@ class CadreExperimental:
                
         # BATCH : je me demande si on ne peut pas avoir un seul dataset ici
         self.training_data = CadreExperimental.RealDataset(self)
-        self.test_data = CadreExperimental.RealDataset(self)
+        self.test_data = CadreExperimental.RealDataset(self, trier=False)
 
         # Create data loaders.
         # BATCH : se servir du batch_size
@@ -126,15 +126,18 @@ class CadreExperimental:
     
     # BATCH : modifier pour pouvoir utiliser les batchs
     class RealDataset(Dataset):
-        def __init__(self, outer):
+        def __init__(self, outer, trier=True):
             self.min = 0.0
             self.max = outer.periode
             self.step = outer.epsilon
             self.tailleSousEchantillons = outer.tailleSousEchantillons
             self.zeros = torch.zeros(self.tailleSousEchantillons)
             # BATCH : Faire le shuffle ici.
-            rand_indx = torch.randperm(outer.echantillonage)
-            self.nombres=torch.arange(self.min, self.max, self.step)[rand_indx]
+            if trier:
+                rand_indx = torch.randperm(outer.echantillonage)
+                self.nombres=torch.arange(self.min, self.max, self.step)[rand_indx]
+            else:
+                self.nombres=torch.arange(self.min, self.max, self.step)
 
         def __len__(self):
             return round((self.max - self.min) / self.step / self.tailleSousEchantillons)
@@ -322,7 +325,7 @@ class CadreExperimental:
         plt.title(self.signature())
         plt.xlabel("Temps")
         plt.ylabel("Amplitude")
-        plt.plot(self.test_x, self.test_y, color = "black")
+        plt.plot(self.test_x[::512]+self.test_x[-1:], self.test_y[::512]+self.test_y[-1:], color = "black") # marker=".",
         plt.show()
         return self
 
@@ -419,7 +422,7 @@ if __name__ == '__main__':
                     premierePhase=12,\
                     tailleSousEchantillons=512,\
                     nombreSousEchantillons=512,
-                    tailleBatch=128).entraine(nombreRondes=1024)
+                    tailleBatch=512).recupere(rondeEffective=512).dessine()
 
     # cadreExperimental=CadreExperimental(nombrePhases=3,\
     #                 premierePhase=2,\
